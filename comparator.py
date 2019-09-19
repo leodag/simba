@@ -186,10 +186,9 @@ class FigureCanvasToolbar(QWidget):
         return
 
 class Spectrum():
-    def __init__(self, x, real, complex):
+    def __init__(self, x, real):
         self.x = np.array(x)
         self.real = np.array(real)
-        self.complex = np.array(complex)
         return
 
     @classmethod
@@ -209,9 +208,7 @@ class Spectrum():
             datapoints = np.flipud(datapoints)
 
         return Spectrum(datapoints[:, 0],
-                        datapoints[:, 1],
-                        #datapoints[:, 2])
-                        np.zeros(len(datapoints[:, 0])))
+                        datapoints[:, 1])
 
     @classmethod
     def average_spectrum(cls, spectrums):
@@ -245,7 +242,7 @@ class Spectrum():
 
     @classmethod
     def similarity_samelen(cls, sp1, sp2):
-        total = sp1.sum + sp2.sum
+        total = sp1.sum() + sp2.sum()
         diff_array = abs(sp1.real - sp2.real)
         diff = sum(diff_array)
         intersection = (total - diff)/2
@@ -259,13 +256,11 @@ class Spectrum():
     @classmethod
     def average_spectrum(cls, sp_list):
         return Spectrum(np.copy(sp_list[0].x),
-                        np.average(list(map(lambda sp: sp.real, sp_list)), axis = 0),
-                        np.copy(sp_list[0].complex))
+                        np.average(list(map(lambda sp: sp.real, sp_list)), axis = 0))
 
     def copy(self):
         return Spectrum(np.copy(self.x),
-                        np.copy(self.real),
-                        np.copy(self.complex))
+                        np.copy(self.real))
 
     def plot(self):
         plt.plot(self.x, self.real)
@@ -304,15 +299,21 @@ class Spectrum():
 
     def scale_max(self):
         self.real /= self.max()
-        self.complex /= self.max()
-
         return self
 
     def scale_sum(self):
         self.real /= self.sum()
-        self.complex /= self.sum()
-
         return self
+
+    def offset(self, n):
+        zeros = np.zeros(abs(n))
+        # 0 must match second clause since [0:] will get the whole array, [:0] won't
+        if n > 0:
+            spectrum = Spectrum(self.x, np.concatenate((zeros, self.real[:-n])))
+        else:
+            spectrum = Spectrum(self.x, np.concatenate((self.real[-n:], zeros)))
+
+        return spectrum
 
     #def snip_edges(self, left = 10, right = 180):
     #def snip_edges(self, left = -0.5, right = 10):
@@ -335,7 +336,25 @@ class Spectrum():
         self.real -= baseline
 
         return self
-        #return Spectrum(self.x, self.real - baseline, self.complex)
+
+class SimilarityMatrix:
+    def __init__(files, max_offset = 10):
+        self.sp_list = list(map(lambda file: Spectrum.open(file), files))
+        self.alignment_matrix = np.zeros((len(self.sp_list), 2 * max_offset + 1))
+        self.best_alignment = np.zeros(len(self.sp_list))
+
+        self.average_spectrum = self.find_average_spectrum()
+        return
+
+    def find_average_spectrum():
+        return Spectrum.average_spectrum(self.sp_list)
+
+    def find_max_similarity():
+        for sp in self.sp_list:
+            for i, offset in enumerate(range(-max_offset, max_offset + 1)):
+                self.alignment_matrix[i] = Spectrum.similarity(sp, avg)
+
+        self.best_alignment = np.argmax(self.alignment_matrix, axis = 1)
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
