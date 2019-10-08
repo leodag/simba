@@ -328,7 +328,7 @@ class Spectrum():
         return self.remove_range(self.x[0], left).remove_range(right, self.x[-1])
 
     #def baseline(self, left = 180, right = 200):
-    def baseline(self, left = 10, right = 12):
+    def baseline(self, left=10, right=12):
         left_i = np.searchsorted(self.x, left)
         right_i = np.searchsorted(self.x, right)
         baseline = np.average(self.real[left_i:right_i])
@@ -338,23 +338,29 @@ class Spectrum():
         return self
 
 class SimilarityMatrix:
-    def __init__(files, max_offset = 10):
+    def __init__(self, files, max_offset=10):
+        self.max_offset = max_offset
+
+        print('open')
         self.sp_list = list(map(lambda file: Spectrum.open(file), files))
+        print('snip,scale')
+        self.sp_list = list(map(lambda sp: sp.snip_edges(left=-0.3, right=10.1).scale_sum(), self.sp_list))
         self.alignment_matrix = np.zeros((len(self.sp_list), 2 * max_offset + 1))
         self.best_alignment = np.zeros(len(self.sp_list))
 
         self.average_spectrum = self.find_average_spectrum()
         return
 
-    def find_average_spectrum():
+    def find_average_spectrum(self):
         return Spectrum.average_spectrum(self.sp_list)
 
-    def find_max_similarity():
-        for sp in self.sp_list:
-            for i, offset in enumerate(range(-max_offset, max_offset + 1)):
-                self.alignment_matrix[i] = Spectrum.similarity(sp, avg)
+    def find_max_similarity(self):
+        for sp_i, sp in enumerate(self.sp_list):
+            for off_i, off in enumerate(range(-self.max_offset, self.max_offset + 1)):
+                self.alignment_matrix[sp_i, off_i] = Spectrum.similarity(sp.offset(off), self.average_spectrum)
 
         self.best_alignment = np.argmax(self.alignment_matrix, axis = 1)
+        return self.best_alignment
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
