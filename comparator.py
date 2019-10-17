@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import random
 import argparse
@@ -158,7 +159,6 @@ class App(QWidget):
         else:
             return None
 
-
 class FigureCanvasToolbar(QWidget):
     def __init__(self, figure):
         super().__init__()
@@ -186,9 +186,11 @@ class FigureCanvasToolbar(QWidget):
         return
 
 class Spectrum():
-    def __init__(self, x, real):
+    def __init__(self, x, real, filename=None, original_format=None):
         self.x = np.array(x)
         self.real = np.array(real)
+        self.filename = filename
+        self.original_format = original_format
         return
 
     @classmethod
@@ -208,7 +210,9 @@ class Spectrum():
             datapoints = np.flipud(datapoints)
 
         return Spectrum(datapoints[:, 0],
-                        datapoints[:, 1])
+                        datapoints[:, 1],
+                        filename=os.path.basename(file),
+                        original_format=format)
 
     @classmethod
     def average_spectrum(cls, spectrums):
@@ -264,6 +268,15 @@ class Spectrum():
 
     def plot(self):
         plt.plot(self.x, self.real)
+        return plt.show()
+
+    @classmethod
+    def plot_comparison(cls, sp1, sp2):
+        difference = (sp1.real - sp2.real) * 8
+        plt.plot(sp1.x, difference, label='difference*8')
+        plt.plot(sp1.x, sp1.real + 0.0005, label=sp1.filename)
+        plt.plot(sp1.x, -sp2.real - 0.0005, label=sp2.filename)
+        plt.legend()
         return plt.show()
 
     def max(self):
