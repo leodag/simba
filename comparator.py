@@ -350,6 +350,7 @@ class SimilarityMatrix:
         print('transform')
         self.sp_list = list(map(transform, self.sp_list))
         self.alignment_matrix = np.zeros((len(self.sp_list), 2 * max_offset + 1))
+        self.similarity_matrix = np.zeros((len(self.sp_list), len(self.sp_list)))
         self.best_alignments = np.zeros(len(self.sp_list))
 
         self.average_spectrum = self.find_average_spectrum()
@@ -375,6 +376,18 @@ class SimilarityMatrix:
         for sp, off in zip(self.sp_list, self.best_alignments):
             aligned_sp_list.append(sp.offset(off))
         return aligned_sp_list
+
+    def populate_matrix(self):
+        for i in range(0, len(self.sp_list)):
+            for j in range(0, len(self.sp_list)):
+                if i < j:
+                    self.similarity_matrix[i, j] = Spectrum.similarity(self.sp_list)
+                elif i == j:
+                    self.similarity_matrix[i, j] = 1
+                else:
+                    self.similarity_matrix[i, j] = 0
+                    #self.similarity_matrix[i, j] = self.similarity_matrix[j, i]
+        return self.similarity_matrix
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
