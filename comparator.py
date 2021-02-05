@@ -4,188 +4,14 @@ import os
 import sys
 import random
 import argparse
+import re
 import numpy as np
-from PyQt5.QtCore import pyqtSlot
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-
-class App(QWidget):
-    def __init__(self, files=None, edge_snip=False, baseline_adjust=False):
-        super().__init__()
-
-        self.edge_snip = edge_snip
-        self.baseline_adjust = baseline_adjust
-
-        if len(files) >= 1:
-            self.file1 = files[0]
-        else:
-            self.file1 = None
-
-        if len(files) >= 2:
-            self.file2 = files[1]
-        else:
-            self.file2 = None
-
-        self.title = 'Comparador'
-        self.initUI()
-
-        return
-
-    def initUI(self):
-        self.setWindowTitle(self.title)
-
-        self.resize(600, 400)
-
-        label1 = QLabel()
-        openButton1 = QPushButton('File 1...')
-        openButton1.clicked.connect(self.openFile1)
-        self.label1 = label1
-
-        label2 = QLabel()
-        openButton2 = QPushButton('File 2...')
-        openButton2.clicked.connect(self.openFile2)
-        self.label2 = label2
-
-        calcButton = QPushButton('Calculate similarity')
-        calcButton.clicked.connect(self.calcSimilarity)
-        resultLabel = QLabel('Select files to be compared')
-        self.resultLabel = resultLabel
-
-        self.updateFile1()
-        self.updateFile2()
+from typing import List
 
 
-        sidePanel = QVBoxLayout()
-
-        sidePanel.addWidget(label1)
-        sidePanel.addWidget(openButton1)
-        sidePanel.addWidget(label2)
-        sidePanel.addWidget(openButton2)
-
-        sidePanel.addStretch()
-
-        sidePanel.addWidget(calcButton)
-        sidePanel.addWidget(resultLabel)
-
-        rootLayout = QHBoxLayout()
-
-        rootLayout.addLayout(sidePanel)
-
-
-        fig = plt.figure()
-        self.fig = fig
-
-        axes = fig.add_subplot(111)
-        self.axes = axes
-
-        axes.invert_xaxis()
-
-        canvas = FigureCanvasToolbar(fig)
-        self.canvas = canvas
-
-        rootLayout.addWidget(canvas)
-
-        self.setLayout(rootLayout)
-
-        self.show()
-        return
-
-    @pyqtSlot()
-    def openFile1(self):
-        self.file1 = self.openFileDialog()
-        self.updateFile1()
-        return
-
-    @pyqtSlot()
-    def openFile2(self):
-        self.file2 = self.openFileDialog()
-        self.updateFile2()
-        return
-
-    @pyqtSlot()
-    def calcSimilarity(self):
-        sp1 = Spectrum.open(self.file1)
-        sp2 = Spectrum.open(self.file2)
-
-        #if False:
-        if self.baseline_adjust:
-            sp1 = sp1.baseline()
-            sp2 = sp2.baseline()
-
-        #if False:
-        if self.edge_snip:
-            sp1 = sp1.snip_edges()
-            sp2 = sp2.snip_edges()
-
-        sp1 = sp1.scaled2()
-        sp2 = sp2.scaled2()
-
-        result = Spectrum.similarity(sp1, sp2)
-
-        print("aaa", result)
-
-        self.resultLabel.setText('{:.5%}'.format(result))
-
-        self.axes.clear()
-        self.axes.invert_xaxis()
-        self.axes.plot(sp1.x, sp1.real)
-        self.axes.plot(sp2.x, sp2.real)
-        self.canvas.draw()
-
-        return
-
-    def updateFile1(self):
-        if self.file1 == None:
-            self.label1.setText('No file selected')
-        else:
-            self.label1.setText(self.file1)
-        return
-
-    def updateFile2(self):
-        if self.file2 == None:
-            self.label2.setText('No file selected')
-        else:
-            self.label2.setText(self.file2)
-        return
-
-    def openFileDialog(self):
-        file = QFileDialog.getOpenFileName(self, "Open Image", "", "CSV Files (*.asc)")
-
-        if file[0] != '':
-            return file[0]
-        else:
-            return None
-
-class FigureCanvasToolbar(QWidget):
-    def __init__(self, figure):
-        super().__init__()
-
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        canvas = FigureCanvas(figure)
-        self.canvas = canvas
-
-        toolbar = NavigationToolbar(canvas, QWidget())
-
-        FigureCanvas.setSizePolicy(canvas,
-                                   QSizePolicy.Expanding,
-                                   QSizePolicy.Expanding)
-        FigureCanvas.updateGeometry(canvas)
-
-        layout.addWidget(toolbar)
-        layout.addWidget(canvas)
-
-        return
-
-    def draw(self):
-        self.canvas.draw()
-        return
-
-class Spectrum():
+class Spectrum:
     def __init__(self, x, real, filename=None, original_format=None):
         self.x = np.array(x)
         self.real = np.array(real)
@@ -194,29 +20,69 @@ class Spectrum():
         return
 
     @classmethod
-    def open(cls, file, format = None):
-        if format == None:
-            if file.endswith('.asc'):
-                format = 'Bruker TopSpin'
+    def open(cls, file, format=None):
+        if format is None:
+            if file.endswith(".asc"):
+                format = "Bruker TopSpin"
             else:
-                format = 'SpinWorks'
+                format = "SpinWorks"
 
-        if format == 'Bruker TopSpin':
-            datapoints = np.genfromtxt(file, skip_header = 2)
-        elif format == 'SpinWorks':
-            datapoints = np.genfromtxt(file, skip_header = 1)
-
-        if datapoints[0][0] > datapoints[-1][0]:
+        if format == "Bruker TopSpin":
+            datapoints = np.genfromtxt(file, skip_header=1)
             datapoints = np.flipud(datapoints)
+            x = datapoints[:, 0]
+            real = datapoints[:, 1]
+        elif format == "SpinWorks":
+            with open(file, 'r', encoding='latin1', newline='\r\n') as f:
+                header = ""
+                for _ in range(2):
+                    header += f.readline()
 
-        return Spectrum(datapoints[:, 0],
-                        datapoints[:, 1],
-                        filename=os.path.basename(file),
-                        original_format=format)
+                print(header)
+
+                datapoints = np.flipud(np.genfromtxt(f))
+
+                x = datapoints[:, 0]
+                real = datapoints[:, 1]
+        elif format == "TopSpin2":
+            with open(file, 'r', encoding='latin1') as f:
+                header = ""
+                for _ in range(10):
+                    header += f.readline()
+
+                left = float(re.search("LEFT = (-?[0-9.]+)", header).group(1))
+                right = float(re.search("RIGHT = (-?[0-9.]+)", header).group(1))
+                size = int(re.search("SIZE = ([0-9]+)", header).group(1))
+                x = np.linspace(right, left, size)
+                real = np.flipud(np.genfromtxt(f))
+        elif format == "TSV":
+            datapoints = np.genfromtxt(file, skip_header=0)
+            datapoints = np.flipud(datapoints)
+            x = datapoints[:, 0]
+            real = datapoints[:, 1]
+
+        return Spectrum(
+            x,
+            real,
+            filename=os.path.basename(file),
+            original_format=format,
+        )
 
     @classmethod
-    def average_spectrum(cls, spectrums):
-        return np.average(spectrums, axis = 0)
+    def open_spectra(cls, files, format=None):
+        return list(map(lambda file: Spectrum.open(file, format), files))
+
+    # @classmethod
+    # def average_spectrum(cls, spectra):
+    #     real_axes = list(map(lambda sp: sp.real, spectra))
+    #     return Spectrum(spectra[0].x, np.average(real_axes, axis=0))
+
+    @classmethod
+    def average_spectrum(cls, sp_list):
+        return Spectrum(
+            np.copy(sp_list[0].x),
+            np.average(list(map(lambda sp: sp.real, sp_list)), axis=0),
+        )
 
     @classmethod
     def similarity(cls, sp1, sp2):
@@ -239,7 +105,7 @@ class Spectrum():
             intersection += min(real_short, real_long)
 
         union = sum1 + sum2 - intersection
-        #index = intersection / union
+        # index = intersection / union
         index = intersection / 2
 
         return index
@@ -249,7 +115,7 @@ class Spectrum():
         total = sp1.sum() + sp2.sum()
         diff_array = abs(sp1.real - sp2.real)
         diff = sum(diff_array)
-        intersection = (total - diff)/2
+        intersection = (total - diff) / 2
 
         return intersection
 
@@ -257,14 +123,8 @@ class Spectrum():
         # index = intersection / union
         # return index
 
-    @classmethod
-    def average_spectrum(cls, sp_list):
-        return Spectrum(np.copy(sp_list[0].x),
-                        np.average(list(map(lambda sp: sp.real, sp_list)), axis = 0))
-
     def copy(self):
-        return Spectrum(np.copy(self.x),
-                        np.copy(self.real))
+        return Spectrum(np.copy(self.x), np.copy(self.real))
 
     def plot(self):
         plt.plot(self.x, self.real)
@@ -273,7 +133,7 @@ class Spectrum():
     @classmethod
     def plot_comparison(cls, sp1, sp2):
         difference = (sp1.real - sp2.real) * 8
-        plt.plot(sp1.x, difference, label='difference*8')
+        plt.plot(sp1.x, difference, label="difference*8")
         plt.plot(sp1.x, sp1.real + 0.0005, label=sp1.filename)
         plt.plot(sp1.x, -sp2.real - 0.0005, label=sp2.filename)
         plt.legend()
@@ -286,7 +146,7 @@ class Spectrum():
         return np.sum(self.real)
 
     def real_scaled(self):
-        return self.real/self.max()
+        return self.real / self.max()
 
     def real_at(self, x):
         right = np.searchsorted(self.x, x)
@@ -299,7 +159,7 @@ class Spectrum():
 
     def remove_range(self, left, right):
         left_i = np.searchsorted(self.x, left)
-        right_i = np.searchsorted(self.x, right, side='right')
+        right_i = np.searchsorted(self.x, right, side="right")
 
         left_segment = self.real[:left_i]
         right_segment = self.real[right_i:]
@@ -322,16 +182,20 @@ class Spectrum():
         zeros = np.zeros(abs(n))
         # 0 must match first clause since [0:] will get the whole array, [:0] won't
         if n >= 0:
-            spectrum = Spectrum(self.x, np.concatenate((self.real[n:], zeros)))
+            spectrum = Spectrum(
+                self.x, np.concatenate((self.real[n:], zeros)), filename=self.filename
+            )
         else:
-            spectrum = Spectrum(self.x, np.concatenate((zeros, self.real[:n])))
+            spectrum = Spectrum(
+                self.x, np.concatenate((zeros, self.real[:n])), filename=self.filename
+            )
 
         return spectrum
 
-    def snip_edges(self, left = -0.5, right = 10):
+    def snip_edges(self, left=-0.5, right=10):
         return self.remove_range(self.x[0], left).remove_range(right, self.x[-1])
 
-    #def baseline(self, left = 180, right = 200):
+    # def baseline(self, left = 180, right = 200):
     def baseline(self, left=10, right=12):
         left_i = np.searchsorted(self.x, left)
         right_i = np.searchsorted(self.x, right)
@@ -341,14 +205,26 @@ class Spectrum():
 
         return self
 
+    def rolling_average(self, n):
+        conv_filter = np.repeat(1 / n, n)
+        ltail = n // 2
+        rtail = (n - 1) // 2
+        self.real = np.convolve(self.real, conv_filter)[ltail:-rtail]
+
+        return self
+
+    def output(self, format="SpinWorks"):
+
+        return
+
+
 class SimilarityMatrix:
-    def __init__(self, files, max_offset=10, transform=lambda sp: sp.snip_edges(left=-0.3, right=10.1).scale_sum()):
+    def __init__(self, sp_list, max_offset=10):
         self.max_offset = max_offset
 
-        print('open')
-        self.sp_list = list(map(lambda file: Spectrum.open(file), files))
-        print('transform')
-        self.sp_list = list(map(transform, self.sp_list))
+        self.sp_list = sp_list
+        # print('transform')
+        # self.sp_list = list(map(transform, self.sp_list))
         self.alignment_matrix = np.zeros((len(self.sp_list), 2 * max_offset + 1))
         self.similarity_matrix = np.zeros((len(self.sp_list), len(self.sp_list)))
         self.best_alignments = np.zeros(len(self.sp_list))
@@ -356,19 +232,19 @@ class SimilarityMatrix:
         self.average_spectrum = self.find_average_spectrum()
         return
 
-    @classmethod
-    def open_standard_files(cls, max_offset=10):
-        return cls(files, max_offset)
-
     def find_average_spectrum(self):
         return Spectrum.average_spectrum(self.sp_list)
 
     def find_best_alignments(self):
         for sp_i, sp in enumerate(self.sp_list):
             for off_i, off in enumerate(range(-self.max_offset, self.max_offset + 1)):
-                self.alignment_matrix[sp_i, off_i] = Spectrum.similarity(sp.offset(off), self.average_spectrum)
+                self.alignment_matrix[sp_i, off_i] = Spectrum.similarity(
+                    sp.offset(off), self.average_spectrum
+                )
 
-        self.best_alignments = np.argmax(self.alignment_matrix, axis = 1) - self.max_offset
+        self.best_alignments = (
+            np.argmax(self.alignment_matrix, axis=1) - self.max_offset
+        )
         return self.best_alignments
 
     def offset_aligned_spectrums(self):
@@ -381,42 +257,205 @@ class SimilarityMatrix:
         for i in range(0, len(self.sp_list)):
             for j in range(0, len(self.sp_list)):
                 if i < j:
-                    self.similarity_matrix[i, j] = Spectrum.similarity(self.sp_list)
+                    self.similarity_matrix[i, j] = Spectrum.similarity(
+                        self.sp_list[i], self.sp_list[j]
+                    )
                 elif i == j:
                     self.similarity_matrix[i, j] = 1
                 else:
-                    self.similarity_matrix[i, j] = 0
-                    #self.similarity_matrix[i, j] = self.similarity_matrix[j, i]
+                    self.similarity_matrix[i, j] = self.similarity_matrix[j, i]
+                    # self.similarity_matrix[i, j] = self.similarity_matrix[j, i]
         return self.similarity_matrix
+
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument('files', nargs='*')
+    parser.add_argument("files", nargs="*")
 
-    parser.add_argument('--no-baseline-adjust', dest = 'baseline_adjust',
-                        action = 'store_const', const = False, default = True)
-    parser.add_argument('--no-edge-snip', dest = 'edge_snip',
-                        action = 'store_const', const = False, default = True)
-    parser.add_argument('--console', action = 'store_const', const = True, default = False)
+    parser.add_argument(
+        "--no-baseline-adjust",
+        dest="baseline_adjust",
+        action="store_const",
+        const=False,
+        default=True,
+    )
+    parser.add_argument(
+        "--no-edge-snip",
+        dest="edge_snip",
+        action="store_const",
+        const=False,
+        default=True,
+    )
+    parser.add_argument("--console", action="store_const", const=True, default=False)
 
     return parser.parse_args()
 
-def console_execution(files = None):
-    return
 
-files = ["data/D2 1Hdump","data/DDOM1","data/DDOM2 1Hdump","data/DDOM3 1Hdump","data/DDOM4 1Hdump","data/JSAL1dump","data/js-alm1","data/JSALQ1","data/JSALQ2","data/JSALQ3","data/js-c1","data/JSC1Xdump","data/js-c2","data/JSC2Xdump","data/js-ca1","data/js-ca2","data/js-ca3","data/JSCA4dump","data/JSCA4X dump","data/JSCA5dump","data/JSCA5X dump","data/JSCA6dump","data/JSCHIA","data/js-d1","data/js-e1","data/js-g1","data/js-g2","data/js-g3","data/JSG4dump","data/js-g5","data/js-l1","data/js-l2","data/JSL3dump","data/js-l4","data/js-m1","data/js-m2","data/js-m3","data/js-mac1","data/js-ol1","data/JSOL2dump","data/js-ol3c","data/js-ol4","data/js-ol5c","data/js-s1","data/js-s2","data/JSS3dump","data/JSS4dump","data/js-s5","data/js-s6","data/js-wal1","data/OL6 1Hdump","data/OL7 1Hdump","data/SESAC 1Hdump","data/WAL21 1Hdump","data/WAL22 1Hdump"]
+from dataclasses import dataclass
+from os import listdir
+from os.path import isfile, join
+
+
+@dataclass
+class PipelineStep:
+    name: str
+    options: dict = None
+
+    def __repr__(self):
+        return f"Step({self.name}, {self.options})"
+
+
+class Arguments:
+    def __init__(self, args):
+        self.files = []
+        self.pipeline = []
+        self.format = None
+
+        args = iter(args)
+        next(args)
+
+        for arg in args:
+            if arg[0] != "-":
+                self.files.append(arg)
+
+            elif arg == "--directory":
+                directory = next(args)
+                files = [
+                    join(directory, f)
+                    for f in listdir(directory)
+                    if isfile(join(directory, f))
+                ]
+                self.files.extend(files)
+
+            elif arg == "--baseline-adjust":
+                limits = next(args).split(",", maxsplit=1)
+                limits = list(map(lambda s: float(s), limits))
+                parsed.pipeline.append(PipelineStep("baseline_adjust"))
+
+            elif arg == "--snip-edges":
+                limits = next(args).split(",", maxsplit=1)
+                limits = list(map(lambda s: float(s), limits))
+                self.pipeline.append(
+                    PipelineStep("snip_edges", {"left": limits[0], "right": limits[1]})
+                )
+
+            elif arg == "--remove-range":
+                limits = next(args).split(",", maxsplit=1)
+                limits = list(map(lambda s: float(s), limits))
+                self.pipeline.append(
+                    PipelineStep(
+                        "remove_range", {"left": limits[0], "right": limits[1]}
+                    )
+                )
+
+            elif arg == "--scale-sum":
+                self.pipeline.append(PipelineStep("scale_sum"))
+
+            elif arg == "--rolling-average":
+                n = int(next(args))
+                self.pipeline.append(PipelineStep("rolling_average", {"n": n}))
+
+            elif arg == "--similarity-align":
+                offset = int(next(args))
+                self.pipeline.append(
+                    PipelineStep("similarity_align", {"max_offset": offset})
+                )
+
+            elif arg == "--similarity-matrix":
+                self.pipeline.append(PipelineStep("similarity_matrix"))
+
+            elif arg == "--format":
+                self.format = next(args)
+
+            else:
+                print(f"Error: Unrecognized argument {arg}")
+                sys.exit(1)
+
+    def __repr__(self):
+        return f"Files: {self.files}\nPipeline: {self.pipeline}"
+
+
+class PipelineExecutor:
+    def __init__(self, pipeline: List[PipelineStep], files: List[str], format: str):
+        self.files = files
+        self.format = format
+        self.pipeline = pipeline
+
+    def run(self):
+        self.sp_list = Spectrum.open_spectra(self.files, format=self.format)
+
+        for step in self.pipeline:
+            self.run_step(step)
+        return
+
+    def run_step(self, step):
+        print(f"{step.name}")
+        if step.name == "baseline_adjust":
+            for sp in self.sp_list:
+                sp.baseline(step.options["left"], step.options["right"])
+
+        elif step.name == "snip_edges":
+            for sp in self.sp_list:
+                sp.snip_edges(step.options["left"], step.options["right"])
+
+        elif step.name == "remove_range":
+            for sp in self.sp_list:
+                sp.remove_range(step.options["left"], step.options["right"])
+
+        elif step.name == "scale_sum":
+            for sp in self.sp_list:
+                sp.scale_sum()
+
+        elif step.name == "rolling_average":
+            for sp in self.sp_list:
+                sp.rolling_average(step.options["n"])
+
+        elif step.name == "similarity_align":
+            self.sm = SimilarityMatrix(self.sp_list, step.options["max_offset"])
+            self.sm.find_best_alignments()
+            self.sm.sp_list = self.sm.offset_aligned_spectrums()
+            self.sp_list = self.sm.sp_list
+
+        elif step.name == "similarity_matrix":
+            self.sm.populate_matrix()
+
+        # elif step.name == 'out_matrix':
+        #     filenames = map(lambda sp: sp.filename, self.sp_list)
+        #     header = ','.join(filenames)
+        #     np.savetxt(step.options['filename'], delimiter=',', header=header)
+
+        else:
+            print(f"Error: Unrecognized step {step.name}")
+            sys.exit(1)
+
+
+def output_matrix(filename, sm):
+    filenames = map(lambda sp: sp.filename, sm.sp_list)
+    header = ",".join(filenames)
+    np.savetxt(
+        filename, sm.similarity_matrix, delimiter=",", comments="", header=header
+    )
+
+
+def output_alignments(filename, sm):
+    filenames = map(lambda sp: sp.filename, sm.sp_list)
+    max_alignment = (len(executor.sm.alignment_matrix[0]) - 1) / 2
+    alignments = range(int(-max_alignment), int(max_alignment + 1))
+    alignments_str = map(lambda a: str(a), alignments)
+    header = ",".join(filenames) + "\n," + ",".join(alignments_str)
+    best_alignments = np.transpose([executor.sm.best_alignments])
+    table = np.concatenate([best_alignments, executor.sm.alignment_matrix], axis=1)
+
+    np.savetxt(filename, table, delimiter=",", comments="", header=header)
+
 
 if __name__ == '__main__':
-    parsed = parse_args(sys.argv)
+    parsed = Arguments(sys.argv)
+    print(parsed)
 
-    if parsed.console:
-        #ret = console_execution(files = parsed.files, baseline_adjust = parsed.baseline_adjust, edge_snip = parsed.edge_snip)
-        ret = console_execution(files = parsed.files)
-        sys.exit(ret)
-    else:
-        print(sys.argv)
-        print(parsed)
-        app = QApplication(sys.argv)
-        ex = App(files = parsed.files)
-        #ex = App(files = parsed.files, baseline_adjust = parsed.baseline_adust, edge_snip = parsed.edge_snip)
-        sys.exit(app.exec_())
+    executor = PipelineExecutor(parsed.pipeline, parsed.files, parsed.format)
+
+    executor.run()
+
+    output_matrix("out_matrix", executor.sm)
+    output_alignments("out_align", executor.sm)
