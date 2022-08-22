@@ -6,6 +6,7 @@ import random
 import argparse
 import re
 import numpy as np
+import pandas as pd
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from typing import List
@@ -38,8 +39,6 @@ class Spectrum:
                 for _ in range(2):
                     header += f.readline()
 
-                print(header)
-
                 datapoints = np.flipud(np.genfromtxt(f))
 
                 x = datapoints[:, 0]
@@ -60,6 +59,18 @@ class Spectrum:
             datapoints = np.flipud(datapoints)
             x = datapoints[:, 0]
             real = datapoints[:, 1]
+        elif format == "ACD":
+            with open(file, 'r', encoding='latin1') as f:
+                header = ""
+
+                line = f.readline()
+                while line.strip() != "":
+                    header += line
+                    line = f.readline()
+
+                datapoints = np.flipud(np.genfromtxt(f))
+                x = datapoints[:, 0]
+                real = datapoints[:, 1]
 
         return Spectrum(
             x,
@@ -213,6 +224,19 @@ class Spectrum:
 
         return self
 
+    def cancel_negative(self):
+        sorted_real = np.sort(self.real)
+        cumsum = np.cumsum(sorted_real)
+
+        threshold_index = np.searchsorted(cumsum, 0)
+        threshold = sorted_real[threshold_index - 1]
+
+        print(threshold)
+
+        self.real[self.real < threshold] = 0
+
+        return self
+
     def output(self, format="SpinWorks"):
 
         return
@@ -223,8 +247,6 @@ class SimilarityMatrix:
         self.max_offset = max_offset
 
         self.sp_list = sp_list
-        # print('transform')
-        # self.sp_list = list(map(transform, self.sp_list))
         self.alignment_matrix = np.zeros((len(self.sp_list), 2 * max_offset + 1))
         self.similarity_matrix = np.zeros((len(self.sp_list), len(self.sp_list)))
         self.best_alignments = np.zeros(len(self.sp_list))
@@ -330,7 +352,7 @@ class Arguments:
             elif arg == "--baseline-adjust":
                 limits = next(args).split(",", maxsplit=1)
                 limits = list(map(lambda s: float(s), limits))
-                parsed.pipeline.append(PipelineStep("baseline_adjust"))
+                self.pipeline.append(PipelineStep("baseline_adjust"))
 
             elif arg == "--snip-edges":
                 limits = next(args).split(",", maxsplit=1)
@@ -354,6 +376,9 @@ class Arguments:
             elif arg == "--rolling-average":
                 n = int(next(args))
                 self.pipeline.append(PipelineStep("rolling_average", {"n": n}))
+
+            elif arg == "--cancel-negative":
+                self.pipeline.append(PipelineStep("cancel_negative"))
 
             elif arg == "--similarity-align":
                 offset = int(next(args))
@@ -410,9 +435,14 @@ class PipelineExecutor:
             for sp in self.sp_list:
                 sp.rolling_average(step.options["n"])
 
+        elif step.name == "cancel_negative":
+            for sp in self.sp_list:
+                sp.cancel_negative()
+
         elif step.name == "similarity_align":
             self.sm = SimilarityMatrix(self.sp_list, step.options["max_offset"])
             self.sm.find_best_alignments()
+            self.old_sp_list = self.sp_list
             self.sm.sp_list = self.sm.offset_aligned_spectrums()
             self.sp_list = self.sm.sp_list
 
@@ -439,17 +469,23 @@ def output_matrix(filename, sm):
 
 def output_alignments(filename, sm):
     filenames = map(lambda sp: sp.filename, sm.sp_list)
-    max_alignment = (len(executor.sm.alignment_matrix[0]) - 1) / 2
+    max_alignment = (len(sm.alignment_matrix[0]) - 1) / 2
     alignments = range(int(-max_alignment), int(max_alignment + 1))
-    alignments_str = map(lambda a: str(a), alignments)
-    header = ",".join(filenames) + "\n," + ",".join(alignments_str)
-    best_alignments = np.transpose([executor.sm.best_alignments])
-    table = np.concatenate([best_alignments, executor.sm.alignment_matrix], axis=1)
+    columns = ["best alignment"] + list(alignments)
+    best_alignments = np.transpose([sm.best_alignments])
+    table = np.concatenate([best_alignments, sm.alignment_matrix], axis=1)
+    df = pd.DataFrame(table, index=filenames, columns=columns)
+    df.to_csv(filename)
 
-    np.savetxt(filename, table, delimiter=",", comments="", header=header)
+
+def output_aligned(sm, filename):
+    reals = list(map(lambda sp: sp.real, sm.sp_list))
+    filenames = list(map(lambda sp: sp.filename, sm.sp_list))
+    df = pd.DataFrame(reals, index=filenames, columns=sm.sp_list[0].x)
+    df.transpose().to_csv(filename)
 
 
-if __name__ == '__main__':
+def main(args):
     parsed = Arguments(sys.argv)
     print(parsed)
 
@@ -459,3 +495,8 @@ if __name__ == '__main__':
 
     output_matrix("out_matrix", executor.sm)
     output_alignments("out_align", executor.sm)
+    output_aligned(executor.sm, "out_aligned")
+
+
+if __name__ == '__main__':
+    main(sys.argv)
