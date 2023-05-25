@@ -32,3 +32,12 @@ $ ./simba --directory "dados/aluno1-13h" --snip-edges -5.1,210.1 --cancel-negati
 --scale-sum --similarity-align 10 --remove-range 76.4,77.6 --snip-edges -5,210 \
 --rolling-average 31 --scale-sum --similarity-matrix
 ```
+
+## Supported formats:
+
+- Bruker TopSpin (two different formats)
+- SpinWorks
+- TSV (tab-separated values)
+- ACD
+
+If you need support for some other format, you can contact me.
